@@ -1,4 +1,4 @@
-# mattermost-data-warehouse
+# mattermost-data-warehouse  
 
 This repo contains the code for loading data to Mattermost's data warehouse, performing transformations and exporting 
 data to other tools.
