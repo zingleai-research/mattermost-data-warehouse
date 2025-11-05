@@ -25,9 +25,9 @@ select
     nps.count_user_detractors_daily,
     nps.count_user_passives_daily,
     nps.count_user_nps_users_daily,
-    -- MME specific flag (now available in fct_nps_score)
+    -- MME specific flag (will use from fct_nps_score once PR is merged)
     nps.is_mme_customer,
-    -- Use NPS score from fct_nps_score
+    -- NPS scores (will be available from fct_nps_score once PR is merged)
     nps.nps_score_daily,
     nps.end_user_nps_score_daily
 from
@@ -36,6 +36,7 @@ from
         on nps.server_id = customer.server_id
 where
     -- Filter to MME customers only (using flag from fct_nps_score)
+    -- ERROR: This will fail until fct_nps_score has is_mme_customer column
     nps.is_mme_customer = true
     and nps.activity_date >= dateadd('day', -90, current_date)
 

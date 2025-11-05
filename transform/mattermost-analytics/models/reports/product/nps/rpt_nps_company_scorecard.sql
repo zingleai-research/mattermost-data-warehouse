@@ -33,10 +33,10 @@ select
     sum(count_nps_users_daily) over (
         partition by server_id, date_trunc('week', activity_date)
     ) as weekly_nps_users,
-    -- New: Use calculated NPS score from fct_nps_score
+    -- NPS Score from fct_nps_score (will be available once PR is merged)
+    -- ERROR: These columns don't exist yet - will cause compilation errors
     nps_score_daily,
     nps_score_last90d,
-    -- New: MME customer flag for filtering
     is_mme_customer
 from
     {{ ref('fct_nps_score') }}
