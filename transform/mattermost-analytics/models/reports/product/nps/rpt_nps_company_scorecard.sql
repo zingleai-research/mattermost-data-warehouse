@@ -32,7 +32,12 @@ select
     ) as weekly_detractors,
     sum(count_nps_users_daily) over (
         partition by server_id, date_trunc('week', activity_date)
-    ) as weekly_nps_users
+    ) as weekly_nps_users,
+    -- New: Use calculated NPS score from fct_nps_score
+    nps_score_daily,
+    nps_score_last90d,
+    -- New: MME customer flag for filtering
+    is_mme_customer
 from
     {{ ref('fct_nps_score') }}
 where

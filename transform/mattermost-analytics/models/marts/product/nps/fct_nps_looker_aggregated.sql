@@ -28,7 +28,14 @@ select
     count_promoters_last90d,
     count_detractors_last90d,
     count_passives_last90d,
-    count_nps_users_last90d
+    count_nps_users_last90d,
+    -- New: NPS Score calculations
+    nps_score_daily,
+    nps_score_last90d,
+    end_user_nps_score_daily,
+    end_user_nps_score_last90d,
+    -- New: MME customer flag
+    is_mme_customer
 from
     {{ ref('fct_nps_score') }}
 where
