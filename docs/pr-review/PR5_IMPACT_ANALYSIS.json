@@ -1,0 +1,218 @@
+{
+  "summary": "This PR adds NPS score calculation and MME customer filtering to fct_nps_score model. The changes add 5 new calculated columns (nps_score_daily, nps_score_last90d, end_user_nps_score_daily, end_user_nps_score_last90d, is_mme_customer) and join with customer dimension. These changes BREAK downstream models that reference the new columns - rpt_nps_company_scorecard, fct_nps_mme_customers, and fct_nps_looker_aggregated will have compilation errors until this PR is merged. This demonstrates the critical impact of these changes on downstream consumers. The calculated NPS scores enable company scorecard reporting and Looker dashboard integration, but require coordination with downstream model updates.",
+  "risk_level": "High",
+  "impacted_entities": {
+    "models": [
+      {
+        "name": "mart_product.fct_nps_score",
+        "type": "model",
+        "action": "modified",
+        "columns": [
+          "nps_score_daily",
+          "nps_score_last90d",
+          "end_user_nps_score_daily",
+          "end_user_nps_score_last90d",
+          "is_mme_customer",
+          "customer_tier",
+          "customer_company_name"
+        ]
+      },
+      {
+        "name": "reports_product.rpt_nps_company_scorecard",
+        "type": "model",
+        "action": "read",
+        "columns": [
+          "nps_score_daily",
+          "nps_score_last90d",
+          "is_mme_customer"
+        ],
+        "impact": "BREAKING: References nps_score_daily, nps_score_last90d, and is_mme_customer columns that don't exist yet. Will cause compilation error: 'Invalid column nps_score_daily'. Model must be updated after this PR is merged."
+      },
+      {
+        "name": "mart_product.fct_nps_mme_customers",
+        "type": "model",
+        "action": "read",
+        "columns": [
+          "nps_score_daily",
+          "end_user_nps_score_daily",
+          "is_mme_customer"
+        ],
+        "impact": "BREAKING: References is_mme_customer, nps_score_daily, and end_user_nps_score_daily columns that don't exist yet. Will cause compilation error: 'Invalid column is_mme_customer'. Model must be updated after this PR is merged."
+      },
+      {
+        "name": "mart_product.fct_nps_looker_aggregated",
+        "type": "model",
+        "action": "read",
+        "columns": [
+          "nps_score_daily",
+          "nps_score_last90d",
+          "end_user_nps_score_daily",
+          "end_user_nps_score_last90d",
+          "is_mme_customer"
+        ],
+        "impact": "BREAKING: References 5 new columns (nps_score_daily, nps_score_last90d, end_user_nps_score_daily, end_user_nps_score_last90d, is_mme_customer) that don't exist yet. Will cause compilation errors. Model must be updated after this PR is merged."
+      },
+      {
+        "name": "reports_product.rpt_nps_by_user_role",
+        "type": "model",
+        "action": "read",
+        "columns": [
+          "count_user_promoters_daily",
+          "count_user_detractors_daily",
+          "count_user_nps_users_daily",
+          "count_promoters_daily",
+          "count_detractors_daily"
+        ]
+      }
+    ],
+    "dashboards": [
+      {
+        "name": "nps_company_scorecard_dashboard",
+        "owner": "@executive_team",
+        "type": "Dashboard",
+        "impact": "CRITICAL: Primary data source for company scorecard NPS metric. New nps_score_daily and is_mme_customer columns enable MME customer filtering and NPS score display. Dashboard will now show calculated NPS scores instead of requiring manual calculation in Looker."
+      },
+      {
+        "name": "nps_by_account_looker_dashboard",
+        "owner": "@product_team",
+        "type": "Dashboard",
+        "impact": "Uses fct_nps_looker_aggregated for dashboard queries. New end_user_nps_score_daily enables 'End Users' filter requested by Katie. New NPS score columns provide pre-calculated metrics, improving dashboard performance."
+      },
+      {
+        "name": "nps_user_role_distribution_dashboard",
+        "owner": "@data_analytics_team",
+        "type": "Dashboard",
+        "impact": "Uses rpt_nps_by_user_role for user role analysis. New end_user_nps_score columns enable end-user-only analysis. Dashboard can now show NPS scores by role without manual calculation."
+      }
+    ],
+    "pipelines": [
+      {
+        "name": "nps_analytics_dbt_pipeline",
+        "type": "dbt Model",
+        "schedule": "Daily",
+        "impact": "Query execution time increases from 4.8 to 5.2 minutes due to additional calculations and customer dimension join. Cost increases from $3.85 to $4.15 per run. New calculated columns are available for all downstream models."
+      },
+      {
+        "name": "company_scorecard_report_pipeline",
+        "type": "dbt Model",
+        "schedule": "Daily",
+        "impact": "CRITICAL: Pipeline will FAIL until this PR is merged. rpt_nps_company_scorecard references nps_score_daily, nps_score_last90d, and is_mme_customer columns that don't exist yet. Daily pipeline will error with 'Invalid column' errors. Must coordinate deployment with downstream model updates."
+      },
+      {
+        "name": "looker_nps_refresh",
+        "type": "Looker Scheduled Query",
+        "schedule": "Every 15 minutes",
+        "impact": "CRITICAL: Looker dashboard will FAIL until this PR is merged. fct_nps_looker_aggregated references new NPS score columns that don't exist yet. Dashboard queries will error with 'Invalid column' errors. Dashboard refresh will fail every 15 minutes until fct_nps_score is updated."
+      }
+    ]
+  },
+  "metrics": {
+    "assets_impacted_count": 8,
+    "assets_impacted": [
+      "nps_company_scorecard_dashboard",
+      "nps_by_account_looker_dashboard",
+      "nps_user_role_distribution_dashboard",
+      "nps_analytics_dbt_pipeline",
+      "company_scorecard_report_pipeline",
+      "looker_nps_refresh",
+      "rpt_nps_company_scorecard",
+      "fct_nps_mme_customers"
+    ],
+    "dashboards_affected": 3,
+    "pipelines_affected": 3,
+    "classification_changes": "No data classification changes. New calculated columns added to existing fact table. MME customer flag enables customer segmentation."
+  },
+  "lineage": {
+    "nodes": {
+      "model.mart_product.fct_nps_score": {
+        "name": "fct_nps_score",
+        "unique_id": "model.mart_product.fct_nps_score",
+        "depends_on": {
+          "nodes": [
+            "model.int_product.int_user_nps_score_spined",
+            "model.int_product.int_nps_server_version_spined",
+            "model.mart_product.dim_latest_server_customer_info"
+          ]
+        },
+        "resource_type": "model",
+        "config": {
+          "materialized": "table",
+          "tags": ["nps", "nightly"]
+        }
+      },
+      "model.reports_product.rpt_nps_company_scorecard": {
+        "name": "rpt_nps_company_scorecard",
+        "unique_id": "model.reports_product.rpt_nps_company_scorecard",
+        "depends_on": {
+          "nodes": [
+            "model.mart_product.fct_nps_score"
+          ]
+        },
+        "resource_type": "model"
+      },
+      "model.mart_product.fct_nps_mme_customers": {
+        "name": "fct_nps_mme_customers",
+        "unique_id": "model.mart_product.fct_nps_mme_customers",
+        "depends_on": {
+          "nodes": [
+            "model.mart_product.fct_nps_score",
+            "model.mart_product.dim_latest_server_customer_info"
+          ]
+        },
+        "resource_type": "model"
+      },
+      "model.mart_product.fct_nps_looker_aggregated": {
+        "name": "fct_nps_looker_aggregated",
+        "unique_id": "model.mart_product.fct_nps_looker_aggregated",
+        "depends_on": {
+          "nodes": [
+            "model.mart_product.fct_nps_score"
+          ]
+        },
+        "resource_type": "model"
+      },
+      "model.reports_product.rpt_nps_by_user_role": {
+        "name": "rpt_nps_by_user_role",
+        "unique_id": "model.reports_product.rpt_nps_by_user_role",
+        "depends_on": {
+          "nodes": [
+            "model.mart_product.fct_nps_score"
+          ]
+        },
+        "resource_type": "model"
+      }
+    },
+    "edges": [
+      {
+        "source": "model.int_product.int_user_nps_score_spined",
+        "target": "model.mart_product.fct_nps_score"
+      },
+      {
+        "source": "model.int_product.int_nps_server_version_spined",
+        "target": "model.mart_product.fct_nps_score"
+      },
+      {
+        "source": "model.mart_product.dim_latest_server_customer_info",
+        "target": "model.mart_product.fct_nps_score"
+      },
+      {
+        "source": "model.mart_product.fct_nps_score",
+        "target": "model.reports_product.rpt_nps_company_scorecard"
+      },
+      {
+        "source": "model.mart_product.fct_nps_score",
+        "target": "model.mart_product.fct_nps_mme_customers"
+      },
+      {
+        "source": "model.mart_product.fct_nps_score",
+        "target": "model.mart_product.fct_nps_looker_aggregated"
+      },
+      {
+        "source": "model.mart_product.fct_nps_score",
+        "target": "model.reports_product.rpt_nps_by_user_role"
+      }
+    ]
+  },
+  "notes": "This PR adds NPS score calculation and MME customer filtering to fct_nps_score. Key impacts:\n1. New Columns: 5 new calculated columns (4 NPS scores + 1 MME flag)\n2. Performance: Slight increase in query time (4.8 to 5.2 min) due to calculations and join\n3. BREAKING CHANGES: 3 downstream models will have compilation errors until this PR is merged:\n   - rpt_nps_company_scorecard: References nps_score_daily, nps_score_last90d, is_mme_customer\n   - fct_nps_mme_customers: References is_mme_customer, nps_score_daily, end_user_nps_score_daily\n   - fct_nps_looker_aggregated: References all 5 new columns\n4. Pipeline Impact: Daily pipelines will fail until PR is merged and downstream models are updated\n5. Dashboard Impact: Looker dashboard will fail until PR is merged\n\nCRITICAL DEPLOYMENT NOTES:\n- This is a breaking change - downstream models must be updated after merge\n- Coordinate deployment with downstream model updates\n- Consider feature flag or gradual rollout\n- Test in dev environment first\n- The calculated NPS scores are used in company scorecard, which is a key executive metric. Calculation accuracy is paramount.\n\nRecommendations:\n- Validate NPS calculation formula matches business requirements\n- Update downstream models in separate PR or same PR\n- Monitor query performance after deployment\n- Test MME customer flag logic with actual customer data\n- Add data quality tests for NPS score range and calculation accuracy"
+}
+
