@@ -1,0 +1,116 @@
+{
+  "summary": "This PR adds new calculated engagement metrics to fct_active_users model including engagement rates, retention ratios, and platform aggregations. The changes add 6 new columns to the existing fact table. These metrics are computed at query time and will be available for all downstream consumers. The additional calculations slightly increase query execution time (4.2 to 4.5 minutes) and cost ($3.45 to $3.65 per run).",
+  "risk_level": "Low",
+  "impacted_entities": {
+    "models": [
+      {
+        "name": "mart_product.fct_active_users",
+        "type": "model",
+        "action": "modified",
+        "columns": [
+          "daily_engagement_rate_pct",
+          "monthly_engagement_rate_pct",
+          "weekly_to_daily_ratio",
+          "monthly_to_daily_ratio",
+          "avg_platform_active_users",
+          "total_daily_active_users_all_platforms"
+        ]
+      },
+      {
+        "name": "reports_product.rpt_active_user_base",
+        "type": "model",
+        "action": "read",
+        "columns": [
+          "daily_active_users",
+          "monthly_active_users",
+          "count_registered_users"
+        ]
+      }
+    ],
+    "dashboards": [
+      {
+        "name": "active_users_executive_dashboard",
+        "owner": "@product_team",
+        "type": "Dashboard",
+        "impact": "New engagement rate metrics will be available for dashboard reporting. Product team can now track engagement rates and retention ratios. No breaking changes to existing metrics."
+      },
+      {
+        "name": "product_analytics_dashboard",
+        "owner": "@data_analytics_team",
+        "type": "Dashboard",
+        "impact": "Can leverage new engagement metrics for trend analysis. Platform aggregation metrics enable better platform distribution analysis."
+      }
+    ],
+    "pipelines": [
+      {
+        "name": "product_analytics_dbt_pipeline",
+        "type": "dbt Model",
+        "schedule": "Daily",
+        "impact": "Query execution time increases slightly from 4.2 to 4.5 minutes due to additional calculations. Cost increases from $3.45 to $3.65 per run. No pipeline failures expected."
+      },
+      {
+        "name": "active_user_base_report_pipeline",
+        "type": "dbt Model",
+        "schedule": "Daily",
+        "impact": "Downstream report rpt_active_user_base will have access to new metrics. No changes required to existing report queries."
+      }
+    ]
+  },
+  "metrics": {
+    "assets_impacted_count": 4,
+    "assets_impacted": [
+      "active_users_executive_dashboard",
+      "product_analytics_dashboard",
+      "product_analytics_dbt_pipeline",
+      "active_user_base_report_pipeline"
+    ],
+    "dashboards_affected": 2,
+    "pipelines_affected": 2,
+    "classification_changes": "No data classification changes. New calculated columns added to existing fact table."
+  },
+  "lineage": {
+    "nodes": {
+      "model.mart_product.fct_active_users": {
+        "name": "fct_active_users",
+        "unique_id": "model.mart_product.fct_active_users",
+        "depends_on": {
+          "nodes": [
+            "model.int_product.int_user_active_days_spined",
+            "model.int_product.int_server_active_days_spined"
+          ]
+        },
+        "resource_type": "model",
+        "config": {
+          "materialized": "table",
+          "tags": ["product", "nightly"]
+        }
+      },
+      "model.reports_product.rpt_active_user_base": {
+        "name": "rpt_active_user_base",
+        "unique_id": "model.reports_product.rpt_active_user_base",
+        "depends_on": {
+          "nodes": [
+            "model.mart_product.fct_active_users"
+          ]
+        },
+        "resource_type": "model"
+      }
+    },
+    "edges": [
+      {
+        "source": "model.int_product.int_user_active_days_spined",
+        "target": "model.mart_product.fct_active_users"
+      },
+      {
+        "source": "model.int_product.int_server_active_days_spined",
+        "target": "model.mart_product.fct_active_users"
+      },
+      {
+        "source": "model.mart_product.fct_active_users",
+        "target": "model.reports_product.rpt_active_user_base"
+      }
+    ]
+  },
+  "notes": "This PR adds new calculated metrics without changing existing business logic. Key considerations:\n1. Performance: Slight increase in query time (4.2 to 4.5 min) and cost ($3.45 to $3.65)\n2. Data Quality: Need to validate calculation accuracy and handle edge cases (division by zero)\n3. Backward Compatibility: All new columns are additive, no breaking changes\n4. Testing: Need to add validation tests for new calculated metrics\n\nRecommendations:\n- Add data quality tests for new calculated columns\n- Monitor query performance after deployment\n- Consider optimizing repeated CASE logic with macros or CTEs"
+}
+

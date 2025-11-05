@@ -1,0 +1,101 @@
+{
+  "model": {
+    "name": "fct_active_users",
+    "columns": [
+      {
+        "name": "daily_engagement_rate_pct",
+        "type": "NUMBER",
+        "description": "Percentage of registered users active daily (0-100)"
+      },
+      {
+        "name": "monthly_engagement_rate_pct",
+        "type": "NUMBER",
+        "description": "Percentage of registered users active monthly (0-100)"
+      },
+      {
+        "name": "weekly_to_daily_ratio",
+        "type": "NUMBER",
+        "description": "Ratio of weekly to daily active users"
+      },
+      {
+        "name": "monthly_to_daily_ratio",
+        "type": "NUMBER",
+        "description": "Ratio of monthly to daily active users"
+      },
+      {
+        "name": "avg_platform_active_users",
+        "type": "NUMBER",
+        "description": "Average active users across desktop and webapp platforms"
+      },
+      {
+        "name": "total_daily_active_users_all_platforms",
+        "type": "BIGINT",
+        "description": "Total active users across all platforms (desktop + webapp + unknown)"
+      }
+    ]
+  },
+  "business_context": "This PR adds new calculated engagement metrics to the fct_active_users model. These metrics help product teams understand user engagement patterns, retention rates, and platform distribution. The calculations are performed at the server-date level and are used for dashboard reporting and trend analysis.",
+  "test_cases": [
+    {
+      "category": "Validation",
+      "name": "Engagement Rate Range Validation",
+      "description": "Validate that engagement rates are within valid range (0-100% or NULL)",
+      "why_required": "Engagement rates should never exceed 100% or be negative. Invalid values indicate calculation errors.",
+      "what_was_missed": "No range validation for new engagement rate columns",
+      "target": "fct_active_users",
+      "test_query": "SELECT COUNT(*) FROM {{ ref('fct_active_users') }} WHERE (daily_engagement_rate_pct < 0 OR daily_engagement_rate_pct > 100) OR (monthly_engagement_rate_pct < 0 OR monthly_engagement_rate_pct > 100)",
+      "details": {
+        "why_required": "Engagement rates should never exceed 100% or be negative. Invalid values indicate calculation errors.",
+        "what_was_missed": "No range validation for new engagement rate columns",
+        "rationale": "Invalid engagement rates would mislead business decisions",
+        "gap": "Missing range validation for percentage calculations"
+      }
+    },
+    {
+      "category": "Business Logic",
+      "name": "Engagement Rate Calculation Accuracy",
+      "description": "Validate that engagement rates are calculated correctly (active_users / registered_users * 100)",
+      "why_required": "Ensure calculated metrics match expected business logic. Daily engagement rate should equal (daily_active_users / count_registered_users) * 100.",
+      "what_was_missed": "No validation that calculations match expected formula",
+      "target": "fct_active_users",
+      "test_query": "SELECT COUNT(*) FROM {{ ref('fct_active_users') }} WHERE ABS(daily_engagement_rate_pct - (daily_active_users::float / NULLIF(count_registered_users, 0)::float * 100)) > 0.01 AND count_registered_users > 0",
+      "details": {
+        "why_required": "Ensure calculated metrics match expected business logic. Daily engagement rate should equal (daily_active_users / count_registered_users) * 100.",
+        "what_was_missed": "No validation that calculations match expected formula",
+        "rationale": "Incorrect calculations lead to wrong business insights",
+        "gap": "Missing calculation accuracy validation"
+      }
+    },
+    {
+      "category": "Data Quality",
+      "name": "Platform Aggregation Consistency",
+      "description": "Validate that total_daily_active_users_all_platforms equals sum of desktop, webapp, and unknown",
+      "why_required": "The total_daily_active_users_all_platforms should equal the sum of individual platform counts. Inconsistency indicates calculation errors.",
+      "what_was_missed": "No validation that platform aggregation is correct",
+      "target": "fct_active_users",
+      "test_query": "SELECT COUNT(*) FROM {{ ref('fct_active_users') }} WHERE total_daily_active_users_all_platforms != (COALESCE(daily_desktop_active_users, 0) + COALESCE(daily_webapp_active_users, 0) + COALESCE(daily_unknown_active_users, 0))",
+      "details": {
+        "why_required": "The total_daily_active_users_all_platforms should equal the sum of individual platform counts. Inconsistency indicates calculation errors.",
+        "what_was_missed": "No validation that platform aggregation is correct",
+        "rationale": "Incorrect aggregations cause data quality issues",
+        "gap": "Missing aggregation consistency validation"
+      }
+    },
+    {
+      "category": "Validation",
+      "name": "Ratio Calculation Validation",
+      "description": "Validate that weekly_to_daily_ratio and monthly_to_daily_ratio are reasonable (>= 1.0)",
+      "why_required": "Weekly and monthly active users should always be >= daily active users, so ratios should be >= 1.0. Values < 1.0 indicate calculation errors.",
+      "what_was_missed": "No validation that ratios are logically consistent",
+      "target": "fct_active_users",
+      "test_query": "SELECT COUNT(*) FROM {{ ref('fct_active_users') }} WHERE (weekly_to_daily_ratio < 1.0 AND daily_active_users > 0) OR (monthly_to_daily_ratio < 1.0 AND daily_active_users > 0)",
+      "details": {
+        "why_required": "Weekly and monthly active users should always be >= daily active users, so ratios should be >= 1.0. Values < 1.0 indicate calculation errors.",
+        "what_was_missed": "No validation that ratios are logically consistent",
+        "rationale": "Invalid ratios indicate data quality or calculation problems",
+        "gap": "Missing logical consistency validation"
+      }
+    }
+  ]
+}
+

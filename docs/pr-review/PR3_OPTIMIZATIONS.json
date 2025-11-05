@@ -1,0 +1,68 @@
+{
+  "sql_query": "SELECT\n    -- ... existing columns ...\n    -- New calculated metrics: Engagement rates and ratios\n    , CASE \n        WHEN COALESCE(sas.count_registered_users, 0) > 0 \n        THEN ROUND(\n            (COALESCE(m.daily_active_users, 0)::float / COALESCE(sas.count_registered_users, 1)::float) * 100, \n            2\n        )\n        ELSE 0\n      END AS daily_engagement_rate_pct\n    , CASE \n        WHEN COALESCE(sas.count_registered_users, 0) > 0 \n        THEN ROUND(\n            (COALESCE(m.monthly_active_users, 0)::float / COALESCE(sas.count_registered_users, 1)::float) * 100, \n            2\n        )\n        ELSE 0\n      END AS monthly_engagement_rate_pct\n    -- ... additional calculated metrics ...\nFROM metrics m\nFULL OUTER JOIN {{ ref('int_server_active_days_spined') }} sas ON m.daily_server_id = sas.daily_server_id",
+  "sql_file_path": "transform/mattermost-analytics/models/marts/product/fct_active_users.sql",
+  "title": "Active Users Fact Table - Engagement Metrics",
+  "summary": "Adds new calculated engagement metrics and aggregations to fct_active_users model. Includes engagement rates, retention ratios, and platform-level aggregations for better user engagement analysis.",
+  "key_issues": [
+    "Division by zero protection uses COALESCE with 1 as denominator, but should use 0 to avoid incorrect calculations when count_registered_users is 0",
+    "Multiple CASE statements with similar logic could be optimized using a macro or CTE for better maintainability",
+    "No NULL handling for calculated metrics when both numerator and denominator are NULL"
+  ],
+  "suggestions": [
+    {
+      "title": "Fix Division by Zero Protection Logic",
+      "description": "The COALESCE(count_registered_users, 1) should be COALESCE(count_registered_users, 0) to properly handle division by zero. When count_registered_users is 0, dividing by 1 gives incorrect results. Should return 0 or NULL when denominator is 0.",
+      "code": "-- Line 57-58: Fix division by zero protection\nWHEN COALESCE(sas.count_registered_users, 0) > 0 \nTHEN ROUND(\n    (COALESCE(m.daily_active_users, 0)::float / NULLIF(COALESCE(sas.count_registered_users, 0), 0)::float) * 100, \n    2\n)\nELSE NULL",
+      "impact": "Fixes incorrect calculations when registered_users is 0, ensures data accuracy"
+    },
+    {
+      "title": "Optimize Repeated CASE Logic with CTE",
+      "description": "Multiple engagement rate calculations use similar CASE logic. Extract to a CTE or macro to reduce code duplication and improve maintainability.",
+      "code": "-- Add CTE before final SELECT:\nengagement_rates AS (\n    SELECT\n        daily_server_id,\n        CASE WHEN count_registered_users > 0 \n             THEN (daily_active_users::float / NULLIF(count_registered_users, 0)) * 100 \n             ELSE NULL END AS daily_engagement_rate_pct,\n        CASE WHEN count_registered_users > 0 \n             THEN (monthly_active_users::float / NULLIF(count_registered_users, 0)) * 100 \n             ELSE NULL END AS monthly_engagement_rate_pct\n    FROM metrics m\n    LEFT JOIN int_server_active_days_spined sas ON m.daily_server_id = sas.daily_server_id\n)\n-- Then reference in main SELECT",
+      "impact": "Improves code maintainability and reduces duplication"
+    },
+    {
+      "title": "Add NULL Handling for Edge Cases",
+      "description": "When both numerator and denominator are NULL, the calculated metrics should explicitly handle this case. Currently returns 0, but should return NULL to indicate missing data.",
+      "code": "-- Add NULL handling:\nCASE \n    WHEN COALESCE(sas.count_registered_users, 0) = 0 THEN NULL\n    WHEN COALESCE(m.daily_active_users, 0) IS NULL THEN NULL\n    WHEN COALESCE(sas.count_registered_users, 0) > 0 \n    THEN ROUND(\n        (COALESCE(m.daily_active_users, 0)::float / COALESCE(sas.count_registered_users, 1)::float) * 100, \n        2\n    )\n    ELSE NULL\nEND AS daily_engagement_rate_pct",
+      "impact": "Improves data quality by distinguishing between 0% engagement and missing data"
+    }
+  ],
+  "recent_runs": [
+    {
+      "environment": "dev env run",
+      "run_time": "2025-01-20 14:00:00",
+      "cost": "$0.25",
+      "duration": "2.1 minutes",
+      "status": "success"
+    },
+    {
+      "environment": "prod env run",
+      "run_time": "2025-01-20 18:00:00",
+      "cost": "$3.65",
+      "duration": "4.5 minutes",
+      "status": "success"
+    }
+  ],
+  "overview": {
+    "query_type": "dbt Model",
+    "query_tag": "product",
+    "avg_run_cost": "$3.65",
+    "avg_run_cost_previous": "$3.45",
+    "annual_cost": "$7,960",
+    "annual_cost_previous": "$7,530"
+  },
+  "statistics": {
+    "avg_duration": "4.5 minutes",
+    "avg_duration_previous": "4.2 minutes",
+    "total_monthly_cost": "$663",
+    "monthly_runs": "182",
+    "query_tag": "product"
+  },
+  "impact_summary": {
+    "run_time_reduced": "Slight increase due to additional calculations (4.2 to 4.5 min)",
+    "cost_savings": "No cost savings - additional calculations increase cost slightly",
+    "maintainability": "New metrics provide valuable insights but need better code organization"
+  }
+}
+

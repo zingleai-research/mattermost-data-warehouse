@@ -1,0 +1,68 @@
+{
+  "sql_query": "-- Business logic change: Filter out excludable servers at source level\nWITH excludable_servers AS (\n    SELECT DISTINCT server_id\n    FROM {{ ref('dim_excludable_servers') }}\n),\nmetrics AS (\n    SELECT\n        {{ dbt_utils.generate_surrogate_key(['server_id', 'activity_date']) }} AS daily_server_id\n        , activity_date\n        , server_id\n        -- ... aggregations ...\n    FROM {{ ref('int_user_active_days_spined') }} uad\n    LEFT JOIN excludable_servers ex ON uad.server_id = ex.server_id\n    WHERE ex.server_id IS NULL\n    GROUP BY activity_date, server_id\n)\nSELECT\n    -- ... columns ...\nFROM metrics m\nLEFT JOIN {{ ref('int_server_active_days_spined') }} sas ON m.daily_server_id = sas.daily_server_id\nLEFT JOIN excludable_servers ex ON sas.server_id = ex.server_id\nWHERE\n    ex.server_id IS NULL\n    AND COALESCE(m.daily_active_users, 0) > 0",
+  "sql_file_path": "transform/mattermost-analytics/models/marts/product/fct_active_users.sql",
+  "title": "Active Users Fact Table - Business Logic Changes",
+  "summary": "Changes business logic in fct_active_users to filter excludable servers at source level, change join strategy from FULL OUTER to LEFT JOIN, and add minimum threshold for active users. These changes improve data quality but may reduce row count and affect historical comparisons.",
+  "key_issues": [
+    "Excludable server CTE is joined twice (once in metrics CTE, once in final query) which could be optimized",
+    "LEFT JOIN on excludable_servers followed by WHERE ex.server_id IS NULL could be optimized using NOT EXISTS or NOT IN",
+    "Minimum threshold filter (daily_active_users > 0) may exclude legitimate servers with zero users on specific dates"
+  ],
+  "suggestions": [
+    {
+      "title": "Optimize Excludable Server Filtering with NOT EXISTS",
+      "description": "The current approach uses LEFT JOIN + WHERE IS NULL which requires two joins. Use NOT EXISTS instead for better performance, especially on large datasets.",
+      "code": "-- Replace LEFT JOIN + WHERE pattern with NOT EXISTS:\n-- In metrics CTE:\nFROM {{ ref('int_user_active_days_spined') }} uad\nWHERE NOT EXISTS (\n    SELECT 1 \n    FROM {{ ref('dim_excludable_servers') }} ex \n    WHERE ex.server_id = uad.server_id\n)\n-- In final query:\nWHERE NOT EXISTS (\n    SELECT 1 \n    FROM {{ ref('dim_excludable_servers') }} ex \n    WHERE ex.server_id = COALESCE(m.server_id, sas.server_id)\n)\nAND COALESCE(m.daily_active_users, 0) > 0",
+      "impact": "Reduces join operations, improves query performance by 15-20%, especially on large datasets"
+    },
+    {
+      "title": "Reconsider Minimum Threshold Filter",
+      "description": "The filter 'daily_active_users > 0' may exclude legitimate servers that have zero users on specific dates but are still valid for analytics. Consider removing this filter or making it configurable.",
+      "code": "-- Option 1: Remove minimum threshold\nWHERE ex.server_id IS NULL\n-- Option 2: Make threshold configurable via dbt variable\nWHERE ex.server_id IS NULL\n  AND COALESCE(m.daily_active_users, 0) >= {{ var('min_active_users_threshold', 0) }}",
+      "impact": "Preserves more data rows, enables tracking of servers with zero activity, improves historical analysis"
+    },
+    {
+      "title": "Add Index or Clustering on server_id for Excludable Lookup",
+      "description": "If dim_excludable_servers is large, ensure it has proper indexing or clustering on server_id for efficient NOT EXISTS lookups.",
+      "code": "-- Add to dim_excludable_servers model config:\n{-\n    config({\n        \"materialized\": \"table\",\n        \"cluster_by\": [\"server_id\"],\n        \"unique_key\": [\"server_id\"]\n    })\n-}",
+      "impact": "Improves lookup performance for excludable server checks, reduces query execution time"
+    }
+  ],
+  "recent_runs": [
+    {
+      "environment": "dev env run",
+      "run_time": "2025-01-20 15:00:00",
+      "cost": "$0.18",
+      "duration": "1.5 minutes",
+      "status": "success"
+    },
+    {
+      "environment": "prod env run",
+      "run_time": "2025-01-20 19:00:00",
+      "cost": "$2.85",
+      "duration": "3.2 minutes",
+      "status": "success"
+    }
+  ],
+  "overview": {
+    "query_type": "dbt Model",
+    "query_tag": "product",
+    "avg_run_cost": "$2.85",
+    "avg_run_cost_previous": "$3.45",
+    "annual_cost": "$6,220",
+    "annual_cost_previous": "$7,530"
+  },
+  "statistics": {
+    "avg_duration": "3.2 minutes",
+    "avg_duration_previous": "4.2 minutes",
+    "total_monthly_cost": "$518",
+    "monthly_runs": "182",
+    "query_tag": "product"
+  },
+  "impact_summary": {
+    "run_time_reduced": "24% faster (4.2 to 3.2 minutes) due to filtering reducing data volume",
+    "cost_savings": "$1,310/year savings from reduced data processing",
+    "maintainability": "Improved data quality but requires careful validation of row count changes"
+  }
+}
+
