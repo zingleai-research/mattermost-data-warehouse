@@ -7,7 +7,7 @@ data to other tools.
 * [mattermost-data-warehouse](#mattermost-data-warehouse)
   * [Repository structure](#repository-structure)
   * [What does this repo contain?](#what-does-this-repo-contain)
-    * [Extract](#extract)
+    * [Extract](#extract) 
     * [Transform](#transform)
     * [Load](#load)
     * [Billing](#billing)
