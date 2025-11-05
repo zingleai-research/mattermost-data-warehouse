@@ -19,17 +19,20 @@ This PR adds **NPS score calculation** and **MME customer filtering** to the `fc
 - **Added LEFT JOIN:**
   - Joined with `dim_latest_server_customer_info` to get customer information
 
-### 2. **fct_nps_mme_customers.sql** (Updated - 15 lines changed)
-- Updated to use `is_mme_customer` flag from `fct_nps_score` instead of separate join
-- Added `nps_score_daily` and `end_user_nps_score_daily` columns
+### 2. **fct_nps_mme_customers.sql** (BREAKING - Will Error)
+- **References columns that don't exist yet**: `is_mme_customer`, `nps_score_daily`, `end_user_nps_score_daily`
+- **Error**: Will cause compilation error: `Invalid column is_mme_customer`
+- **Impact**: Model will fail until PR is merged
 
-### 3. **fct_nps_looker_aggregated.sql** (Updated - 9 lines added)
-- Added 4 new NPS score columns for Looker dashboard
-- Added `is_mme_customer` flag for filtering
+### 3. **fct_nps_looker_aggregated.sql** (BREAKING - Will Error)
+- **References columns that don't exist yet**: All 5 new NPS score columns
+- **Error**: Will cause compilation errors: `Invalid column nps_score_daily`, etc.
+- **Impact**: Looker dashboard will fail until PR is merged
 
-### 4. **rpt_nps_company_scorecard.sql** (Updated - 7 lines added)
-- Added `nps_score_daily` and `nps_score_last90d` columns
-- Added `is_mme_customer` flag for company scorecard filtering
+### 4. **rpt_nps_company_scorecard.sql** (BREAKING - Will Error)
+- **References columns that don't exist yet**: `nps_score_daily`, `nps_score_last90d`, `is_mme_customer`
+- **Error**: Will cause compilation error: `Invalid column nps_score_daily`
+- **Impact**: Company scorecard pipeline will fail until PR is merged
 
 ## Key Business Logic
 
