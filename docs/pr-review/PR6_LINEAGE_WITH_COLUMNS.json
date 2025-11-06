@@ -1,0 +1,646 @@
+{
+  "pr_id": "PR6",
+  "pr_title": "Update Churn Formula with 30-Day Grace Period",
+  "lineage_entities": [
+    {
+      "entity_id": "entity_1",
+      "entity_name": "account_monthly_arr_deltas_by_type",
+      "entity_type": "table",
+      "schema": "finance",
+      "database": "analytics",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "impact_type": "direct",
+      "change_summary": "Churn formula updated with 30-day grace period. New column added. arr_type classification updated.",
+      "risk_level": "High",
+      "columns": [
+        {
+          "column_name": "month_start",
+          "data_type": "DATE",
+          "description": "First day of the month for the ARR delta calculation",
+          "change_type": "unchanged",
+          "is_key": true
+        },
+        {
+          "column_name": "month_end",
+          "data_type": "DATE",
+          "description": "Last day of the month for the ARR delta calculation",
+          "change_type": "unchanged",
+          "is_key": true
+        },
+        {
+          "column_name": "account_sfid",
+          "data_type": "VARCHAR(18)",
+          "description": "Salesforce Account ID - unique identifier for the account",
+          "change_type": "unchanged",
+          "is_key": true,
+          "not_null": true
+        },
+        {
+          "column_name": "master_account_sfid",
+          "data_type": "VARCHAR(18)",
+          "description": "Master/parent account Salesforce ID for account hierarchy",
+          "change_type": "unchanged",
+          "is_key": true
+        },
+        {
+          "column_name": "arr_type",
+          "data_type": "VARCHAR(50)",
+          "description": "Type of ARR change: 'New ARR', 'Expansion ARR', 'Resurrection ARR', 'Contraction ARR', 'Churn ARR', 'Churn with Recovery ARR', or NULL",
+          "change_type": "modified",
+          "change_description": "New category 'Churn with Recovery ARR' added. Classification logic updated to distinguish temporary vs permanent churn.",
+          "is_key": true
+        },
+        {
+          "column_name": "total_arr_new",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of ARR delta for new accounts (accounts with account_new_arr = true)",
+          "change_type": "unchanged"
+        },
+        {
+          "column_name": "total_arr_expansion",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of ARR delta for account expansions (positive delta, existing account, month_starting_arr > 0)",
+          "change_type": "unchanged"
+        },
+        {
+          "column_name": "total_arr_resurrection",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of ARR delta for account resurrections (positive delta, existing account, month_starting_arr = 0)",
+          "change_type": "unchanged"
+        },
+        {
+          "column_name": "total_arr_contraction",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of ARR delta for account contractions (negative delta, month_ending_arr > 0)",
+          "change_type": "unchanged"
+        },
+        {
+          "column_name": "total_arr_churn",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of ARR delta for true churn (negative delta, month_ending_arr = 0, no recovery within 30 days). Always <= 0.",
+          "change_type": "modified",
+          "change_description": "Calculation updated to exclude accounts with recovery within 30 days. Values will decrease.",
+          "impact": "Values will decrease as accounts with recovery are excluded"
+        },
+        {
+          "column_name": "total_arr_churn_with_recovery",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of ARR delta for churn with recovery (negative delta, month_ending_arr = 0, recovery within 30 days). Always <= 0.",
+          "change_type": "new",
+          "change_description": "New column added to track accounts that churned but recovered within 30 days",
+          "impact": "New column - downstream models referencing this will have compilation errors until PR is merged"
+        },
+        {
+          "column_name": "total_arr_delta",
+          "data_type": "NUMBER(18,2)",
+          "description": "Total ARR delta for the month/account combination. Sum of all ARR type columns.",
+          "change_type": "unchanged"
+        }
+      ],
+      "column_changes_summary": {
+        "new_columns": 1,
+        "modified_columns": 2,
+        "unchanged_columns": 9,
+        "total_columns": 12
+      },
+      "dependencies": {
+        "upstream": [
+          {
+            "model": "account_monthly_arr_deltas",
+            "schema": "finance",
+            "relationship": "direct reference",
+            "join_columns": ["account_sfid", "month_start"]
+          }
+        ],
+        "downstream": [
+          {
+            "model": "rpt_monthly_churn_summary",
+            "schema": "reports_finance",
+            "relationship": "distribution change",
+            "columns_used": ["month_start", "account_sfid", "total_arr_churn", "arr_type", "month_starting_arr", "month_ending_arr"]
+          },
+          {
+            "model": "fct_churn_analysis",
+            "schema": "finance",
+            "relationship": "new column reference",
+            "columns_used": ["month_start", "month_end", "account_sfid", "master_account_sfid", "arr_type", "total_arr_churn", "total_arr_churn_with_recovery", "month_starting_arr", "month_ending_arr", "total_arr_delta"]
+          }
+        ]
+      }
+    },
+    {
+      "entity_id": "entity_2",
+      "entity_name": "rpt_monthly_churn_summary",
+      "entity_type": "table",
+      "schema": "reports_finance",
+      "database": "analytics",
+      "file_path": "transform/snowflake-dbt/models/finance/rpt_monthly_churn_summary.sql",
+      "impact_type": "downstream",
+      "impact_category": "distribution_change",
+      "change_summary": "Churn distribution will change due to updated total_arr_churn values. Churn rates will decrease as accounts with recovery are excluded from true churn calculation.",
+      "risk_level": "Medium",
+      "columns": [
+        {
+          "column_name": "month_start",
+          "data_type": "DATE",
+          "description": "First day of the month for the churn summary",
+          "change_type": "unchanged",
+          "is_key": true,
+          "source_column": "account_monthly_arr_deltas_by_type.month_start"
+        },
+        {
+          "column_name": "customer_tier",
+          "data_type": "VARCHAR(50)",
+          "description": "Customer tier classification from account dimension",
+          "change_type": "unchanged",
+          "is_key": true,
+          "source_column": "account.customer_tier"
+        },
+        {
+          "column_name": "industry",
+          "data_type": "VARCHAR(100)",
+          "description": "Industry classification from account dimension",
+          "change_type": "unchanged",
+          "is_key": true,
+          "source_column": "account.industry"
+        },
+        {
+          "column_name": "company_size",
+          "data_type": "VARCHAR(50)",
+          "description": "Company size classification from account dimension",
+          "change_type": "unchanged",
+          "is_key": true,
+          "source_column": "account.company_size"
+        },
+        {
+          "column_name": "country",
+          "data_type": "VARCHAR(100)",
+          "description": "Country from account dimension",
+          "change_type": "unchanged",
+          "is_key": true,
+          "source_column": "account.country"
+        },
+        {
+          "column_name": "churned_accounts",
+          "data_type": "NUMBER(18,0)",
+          "description": "Count of distinct accounts that churned in the month",
+          "change_type": "affected",
+          "change_description": "Value may decrease due to updated churn calculation",
+          "source_column": "COUNT(DISTINCT account_monthly_arr_deltas_by_type.account_sfid)"
+        },
+        {
+          "column_name": "total_churn_arr",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of total_arr_churn - total ARR lost to churn",
+          "change_type": "affected",
+          "change_description": "Value will decrease as accounts with recovery are excluded from total_arr_churn",
+          "source_column": "SUM(account_monthly_arr_deltas_by_type.total_arr_churn)",
+          "impact": "Will show lower values (more accurate churn)"
+        },
+        {
+          "column_name": "absolute_churn_arr",
+          "data_type": "NUMBER(18,2)",
+          "description": "Absolute value of total churn ARR (always positive)",
+          "change_type": "affected",
+          "change_description": "Value will decrease as total_arr_churn decreases",
+          "source_column": "SUM(ABS(account_monthly_arr_deltas_by_type.total_arr_churn))"
+        },
+        {
+          "column_name": "total_starting_arr",
+          "data_type": "NUMBER(18,2)",
+          "description": "Sum of month_starting_arr - total ARR at start of month",
+          "change_type": "unchanged",
+          "source_column": "SUM(account_monthly_arr_deltas_by_type.month_starting_arr)"
+        },
+        {
+          "column_name": "churn_rate_pct",
+          "data_type": "NUMBER(18,4)",
+          "description": "Churn rate percentage: (absolute_churn_arr / total_starting_arr) * 100",
+          "change_type": "affected",
+          "change_description": "Churn rate will decrease as numerator (absolute_churn_arr) decreases while denominator (total_starting_arr) stays the same",
+          "source_column": "Calculated from absolute_churn_arr and total_starting_arr",
+          "impact": "Will show lower churn rates (more accurate)"
+        },
+        {
+          "column_name": "avg_churn_per_account",
+          "data_type": "NUMBER(18,2)",
+          "description": "Average churn ARR per account",
+          "change_type": "affected",
+          "change_description": "Value will decrease as total_arr_churn decreases",
+          "source_column": "AVG(ABS(account_monthly_arr_deltas_by_type.total_arr_churn))"
+        }
+      ],
+      "column_changes_summary": {
+        "new_columns": 0,
+        "modified_columns": 0,
+        "affected_columns": 5,
+        "unchanged_columns": 6,
+        "total_columns": 11
+      },
+      "dependencies": {
+        "upstream": [
+          {
+            "model": "account_monthly_arr_deltas_by_type",
+            "schema": "finance",
+            "relationship": "direct reference",
+            "join_columns": ["account_sfid"],
+            "columns_used": [
+              {
+                "column": "month_start",
+                "usage": "grouping and filtering"
+              },
+              {
+                "column": "account_sfid",
+                "usage": "join and counting"
+              },
+              {
+                "column": "total_arr_churn",
+                "usage": "aggregation - will show different values",
+                "impact": "distribution change"
+              },
+              {
+                "column": "arr_type",
+                "usage": "filtering (WHERE arr_type = 'Churn ARR')"
+              },
+              {
+                "column": "month_starting_arr",
+                "usage": "aggregation for churn rate calculation"
+              },
+              {
+                "column": "month_ending_arr",
+                "usage": "aggregation for churn rate calculation"
+              }
+            ]
+          },
+          {
+            "model": "account",
+            "schema": "salesforce",
+            "relationship": "left join",
+            "join_columns": ["account_sfid"],
+            "columns_used": ["customer_tier", "industry", "company_size", "country"]
+          }
+        ],
+        "downstream": [
+          {
+            "model": "Executive Finance Dashboard",
+            "type": "dashboard",
+            "relationship": "data source",
+            "columns_used": ["churn_rate_pct", "total_churn_arr", "churned_accounts", "month_start"]
+          },
+          {
+            "model": "Monthly Finance Report",
+            "type": "report",
+            "relationship": "data source",
+            "columns_used": ["churn_rate_pct", "total_churn_arr", "churned_accounts"]
+          }
+        ]
+      }
+    },
+    {
+      "entity_id": "entity_3",
+      "entity_name": "fct_churn_analysis",
+      "entity_type": "table",
+      "schema": "finance",
+      "database": "analytics",
+      "file_path": "transform/snowflake-dbt/models/finance/fct_churn_analysis.sql",
+      "impact_type": "downstream",
+      "impact_category": "new_column_handling",
+      "change_summary": "Model references new column total_arr_churn_with_recovery which does not exist in base branch. Will cause compilation error until PR is merged.",
+      "risk_level": "High",
+      "columns": [
+        {
+          "column_name": "month_start",
+          "data_type": "DATE",
+          "description": "First day of the month",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.month_start"
+        },
+        {
+          "column_name": "month_end",
+          "data_type": "DATE",
+          "description": "Last day of the month",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.month_end"
+        },
+        {
+          "column_name": "account_sfid",
+          "data_type": "VARCHAR(18)",
+          "description": "Salesforce Account ID",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.account_sfid"
+        },
+        {
+          "column_name": "master_account_sfid",
+          "data_type": "VARCHAR(18)",
+          "description": "Master account Salesforce ID",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.master_account_sfid"
+        },
+        {
+          "column_name": "customer_tier",
+          "data_type": "VARCHAR(50)",
+          "description": "Customer tier from account dimension",
+          "change_type": "unchanged",
+          "source_column": "account.customer_tier"
+        },
+        {
+          "column_name": "industry",
+          "data_type": "VARCHAR(100)",
+          "description": "Industry from account dimension",
+          "change_type": "unchanged",
+          "source_column": "account.industry"
+        },
+        {
+          "column_name": "company_size",
+          "data_type": "VARCHAR(50)",
+          "description": "Company size from account dimension",
+          "change_type": "unchanged",
+          "source_column": "account.company_size"
+        },
+        {
+          "column_name": "country",
+          "data_type": "VARCHAR(100)",
+          "description": "Country from account dimension",
+          "change_type": "unchanged",
+          "source_column": "account.country"
+        },
+        {
+          "column_name": "arr_type",
+          "data_type": "VARCHAR(50)",
+          "description": "ARR type classification including new 'Churn with Recovery ARR' category",
+          "change_type": "affected",
+          "change_description": "Will include new 'Churn with Recovery ARR' category",
+          "source_column": "account_monthly_arr_deltas_by_type.arr_type"
+        },
+        {
+          "column_name": "total_arr_churn",
+          "data_type": "NUMBER(18,2)",
+          "description": "True churn ARR (no recovery within 30 days)",
+          "change_type": "affected",
+          "change_description": "Values will decrease as accounts with recovery are excluded",
+          "source_column": "account_monthly_arr_deltas_by_type.total_arr_churn"
+        },
+        {
+          "column_name": "total_arr_churn_with_recovery",
+          "data_type": "NUMBER(18,2)",
+          "description": "Churn ARR with recovery within 30 days",
+          "change_type": "new_reference",
+          "change_description": "References new column that doesn't exist in base branch - will cause compilation error",
+          "source_column": "account_monthly_arr_deltas_by_type.total_arr_churn_with_recovery",
+          "impact": "BREAKING: Column doesn't exist in base branch - compilation error"
+        },
+        {
+          "column_name": "month_starting_arr",
+          "data_type": "NUMBER(18,2)",
+          "description": "ARR at start of month",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.month_starting_arr"
+        },
+        {
+          "column_name": "month_ending_arr",
+          "data_type": "NUMBER(18,2)",
+          "description": "ARR at end of month",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.month_ending_arr"
+        },
+        {
+          "column_name": "total_arr_delta",
+          "data_type": "NUMBER(18,2)",
+          "description": "Total ARR delta for the month",
+          "change_type": "unchanged",
+          "source_column": "account_monthly_arr_deltas_by_type.total_arr_delta"
+        },
+        {
+          "column_name": "recovery_rate_pct",
+          "data_type": "NUMBER(18,4)",
+          "description": "Recovery rate percentage: (recovery ARR / total churn ARR) * 100",
+          "change_type": "affected",
+          "change_description": "Calculation depends on total_arr_churn_with_recovery which doesn't exist in base branch",
+          "source_column": "Calculated from total_arr_churn_with_recovery and total_arr_churn",
+          "impact": "BREAKING: Depends on new column - compilation error"
+        },
+        {
+          "column_name": "is_recovered_churn",
+          "data_type": "BOOLEAN",
+          "description": "Flag indicating if churn is classified as recovery (arr_type = 'Churn with Recovery ARR')",
+          "change_type": "affected",
+          "change_description": "Will correctly identify recovery churn after PR merge",
+          "source_column": "Derived from arr_type"
+        },
+        {
+          "column_name": "total_churn_amount",
+          "data_type": "NUMBER(18,2)",
+          "description": "Total churn amount: ABS(total_arr_churn) + ABS(total_arr_churn_with_recovery)",
+          "change_type": "affected",
+          "change_description": "Calculation depends on total_arr_churn_with_recovery which doesn't exist in base branch",
+          "source_column": "Calculated from total_arr_churn and total_arr_churn_with_recovery",
+          "impact": "BREAKING: Depends on new column - compilation error"
+        }
+      ],
+      "column_changes_summary": {
+        "new_columns": 0,
+        "modified_columns": 0,
+        "affected_columns": 5,
+        "breaking_columns": 3,
+        "unchanged_columns": 10,
+        "total_columns": 17
+      },
+      "dependencies": {
+        "upstream": [
+          {
+            "model": "account_monthly_arr_deltas_by_type",
+            "schema": "finance",
+            "relationship": "direct reference",
+            "join_columns": ["account_sfid"],
+            "columns_used": [
+              {
+                "column": "month_start",
+                "usage": "select",
+                "impact": "none"
+              },
+              {
+                "column": "month_end",
+                "usage": "select",
+                "impact": "none"
+              },
+              {
+                "column": "account_sfid",
+                "usage": "select and join",
+                "impact": "none"
+              },
+              {
+                "column": "master_account_sfid",
+                "usage": "select",
+                "impact": "none"
+              },
+              {
+                "column": "arr_type",
+                "usage": "select and filtering",
+                "impact": "will include new category"
+              },
+              {
+                "column": "total_arr_churn",
+                "usage": "select and calculation",
+                "impact": "values will decrease"
+              },
+              {
+                "column": "total_arr_churn_with_recovery",
+                "usage": "select and calculation",
+                "impact": "BREAKING: Column doesn't exist in base branch - compilation error",
+                "error": "ColumnNotFoundError"
+              },
+              {
+                "column": "month_starting_arr",
+                "usage": "select",
+                "impact": "none"
+              },
+              {
+                "column": "month_ending_arr",
+                "usage": "select",
+                "impact": "none"
+              },
+              {
+                "column": "total_arr_delta",
+                "usage": "select",
+                "impact": "none"
+              }
+            ]
+          },
+          {
+            "model": "account",
+            "schema": "salesforce",
+            "relationship": "left join",
+            "join_columns": ["account_sfid"],
+            "columns_used": ["customer_tier", "industry", "company_size", "country"]
+          }
+        ],
+        "downstream": [
+          {
+            "model": "Churn Analysis Dashboard",
+            "type": "dashboard",
+            "relationship": "data source",
+            "columns_used": ["recovery_rate_pct", "total_arr_churn_with_recovery", "is_recovered_churn", "total_churn_amount"],
+            "impact": "Dashboard will fail to load until PR is merged"
+          }
+        ]
+      },
+      "compilation_errors": [
+        {
+          "error_type": "ColumnNotFoundError",
+          "error_message": "Column 'total_arr_churn_with_recovery' does not exist in model 'account_monthly_arr_deltas_by_type'",
+          "severity": "Critical",
+          "file_path": "transform/snowflake-dbt/models/finance/fct_churn_analysis.sql",
+          "line_number": 16,
+          "affected_columns": [
+            "total_arr_churn_with_recovery",
+            "recovery_rate_pct",
+            "total_churn_amount"
+          ],
+          "resolution": "Merge PR to add column to upstream model"
+        }
+      ]
+    }
+  ],
+  "lineage_summary": {
+    "total_entities": 3,
+    "directly_changed": 1,
+    "downstream_affected": 2,
+    "total_columns": 40,
+    "new_columns": 1,
+    "modified_columns": 2,
+    "affected_columns": 10,
+    "breaking_changes": 3
+  },
+  "column_mapping": {
+    "account_monthly_arr_deltas_by_type": {
+      "unchanged": [
+        "month_start",
+        "month_end",
+        "account_sfid",
+        "master_account_sfid",
+        "total_arr_new",
+        "total_arr_expansion",
+        "total_arr_resurrection",
+        "total_arr_contraction",
+        "total_arr_delta"
+      ],
+      "modified": [
+        {
+          "column": "arr_type",
+          "change": "New category 'Churn with Recovery ARR' added"
+        },
+        {
+          "column": "total_arr_churn",
+          "change": "Calculation updated - values will decrease"
+        }
+      ],
+      "new": [
+        {
+          "column": "total_arr_churn_with_recovery",
+          "description": "Tracks ARR for accounts that churned but recovered within 30 days"
+        }
+      ]
+    },
+    "rpt_monthly_churn_summary": {
+      "affected_by_upstream_changes": [
+        {
+          "column": "total_churn_arr",
+          "upstream_column": "total_arr_churn",
+          "impact": "Value will decrease"
+        },
+        {
+          "column": "absolute_churn_arr",
+          "upstream_column": "total_arr_churn",
+          "impact": "Value will decrease"
+        },
+        {
+          "column": "churn_rate_pct",
+          "upstream_column": "total_arr_churn",
+          "impact": "Churn rate will decrease"
+        },
+        {
+          "column": "churned_accounts",
+          "upstream_column": "total_arr_churn",
+          "impact": "Count may decrease"
+        },
+        {
+          "column": "avg_churn_per_account",
+          "upstream_column": "total_arr_churn",
+          "impact": "Average will decrease"
+        }
+      ]
+    },
+    "fct_churn_analysis": {
+      "breaking_changes": [
+        {
+          "column": "total_arr_churn_with_recovery",
+          "upstream_column": "total_arr_churn_with_recovery",
+          "impact": "Column doesn't exist in base branch - compilation error"
+        },
+        {
+          "column": "recovery_rate_pct",
+          "depends_on": "total_arr_churn_with_recovery",
+          "impact": "Cannot calculate - compilation error"
+        },
+        {
+          "column": "total_churn_amount",
+          "depends_on": "total_arr_churn_with_recovery",
+          "impact": "Cannot calculate - compilation error"
+        }
+      ],
+      "affected_by_upstream_changes": [
+        {
+          "column": "arr_type",
+          "upstream_column": "arr_type",
+          "impact": "Will include new 'Churn with Recovery ARR' category"
+        },
+        {
+          "column": "total_arr_churn",
+          "upstream_column": "total_arr_churn",
+          "impact": "Values will decrease"
+        }
+      ]
+    }
+  }
+}
+

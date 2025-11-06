@@ -1,0 +1,157 @@
+{
+  "pr_id": "PR6",
+  "pr_title": "Update Churn Formula with 30-Day Grace Period",
+  "target_model": {
+    "name": "account_monthly_arr_deltas_by_type",
+    "schema": "finance",
+    "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql"
+  },
+  "existing_test_cases": [
+    {
+      "id": "test_1",
+      "name": "Churn Value Validation",
+      "type": "Data Quality",
+      "description": "Verify that total_arr_churn values are always negative or zero (churn represents ARR loss)",
+      "test_query": "SELECT \n    month_start,\n    account_sfid,\n    total_arr_churn\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE total_arr_churn > 0\n-- Should return 0 rows",
+      "expected_result": "0 rows (all churn values should be <= 0)",
+      "severity": "High",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 26
+    },
+    {
+      "id": "test_2",
+      "name": "Churn Type Consistency",
+      "type": "Business Logic",
+      "description": "Verify that when total_arr_churn is non-zero, arr_type should be 'Churn ARR' or 'Churn with Recovery ARR'",
+      "test_query": "SELECT \n    month_start,\n    account_sfid,\n    total_arr_churn,\n    arr_type\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE total_arr_churn < 0 \n  AND arr_type NOT IN ('Churn ARR', 'Churn with Recovery ARR')\n-- Should return 0 rows",
+      "expected_result": "0 rows (churn should match arr_type)",
+      "severity": "High",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 19
+    },
+    {
+      "id": "test_3",
+      "name": "Data Completeness - Churn Columns",
+      "type": "Data Quality",
+      "description": "Ensure total_arr_churn and total_arr_churn_with_recovery are never NULL",
+      "test_query": "SELECT \n    COUNT(*) as null_churn_count\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE total_arr_churn IS NULL \n   OR total_arr_churn_with_recovery IS NULL\n-- Should return 0",
+      "expected_result": "0 (no null values)",
+      "severity": "High",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 26
+    },
+    {
+      "id": "test_4",
+      "name": "Sum Validation - ARR Types",
+      "type": "Business Logic",
+      "description": "Verify that sum of all ARR type columns equals total_arr_delta",
+      "test_query": "SELECT \n    month_start,\n    account_sfid,\n    total_arr_new + total_arr_expansion + total_arr_resurrection + \n    total_arr_contraction + total_arr_churn + total_arr_churn_with_recovery as calculated_total,\n    total_arr_delta,\n    ABS(calculated_total - total_arr_delta) as difference\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE ABS(calculated_total - total_arr_delta) > 0.01\n-- Should return 0 rows",
+      "expected_result": "0 rows (sum should equal total_arr_delta)",
+      "severity": "High",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 22
+    },
+    {
+      "id": "test_5",
+      "name": "Historical Consistency Check",
+      "type": "Data Quality",
+      "description": "Verify that historical churn values (before grace period implementation) remain unchanged",
+      "test_query": "SELECT \n    month_start,\n    account_sfid,\n    total_arr_churn\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE month_start < DATEADD(month, -1, CURRENT_DATE)\n  AND arr_type = 'Churn ARR'\n  AND total_arr_churn != (SELECT old_churn FROM backup_table WHERE ...)\n-- Compare with backup/historical values",
+      "expected_result": "Historical values should match backup (grace period only affects future)",
+      "severity": "Medium",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 26
+    },
+    {
+      "id": "test_6",
+      "name": "Account-Level Aggregation",
+      "type": "Business Logic",
+      "description": "Verify that churn aggregates correctly at account level across months",
+      "test_query": "WITH account_churn AS (\n    SELECT \n        account_sfid,\n        SUM(total_arr_churn) as total_account_churn,\n        SUM(total_arr_churn_with_recovery) as total_recovery_churn\n    FROM finance.account_monthly_arr_deltas_by_type\n    WHERE arr_type IN ('Churn ARR', 'Churn with Recovery ARR')\n    GROUP BY account_sfid\n)\nSELECT \n    account_sfid,\n    total_account_churn,\n    total_recovery_churn\nFROM account_churn\nWHERE total_account_churn > 0 OR total_recovery_churn > 0\n-- Should only show accounts with actual churn",
+      "expected_result": "Only accounts with churn events",
+      "severity": "Medium",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 26
+    },
+    {
+      "id": "test_7",
+      "name": "Edge Cases - Zero ARR",
+      "type": "Data Quality",
+      "description": "Verify handling of accounts with zero ARR (edge case)",
+      "test_query": "SELECT \n    month_start,\n    account_sfid,\n    month_ending_arr,\n    total_arr_churn\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE month_ending_arr = 0 \n  AND total_arr_delta < 0\n  AND total_arr_churn = 0\n  AND arr_type != 'Churn ARR'\n  AND arr_type != 'Churn with Recovery ARR'\n-- Should handle zero ARR correctly",
+      "expected_result": "Accounts with zero ending ARR and negative delta should be classified as churn",
+      "severity": "Medium",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 19
+    },
+    {
+      "id": "test_8",
+      "name": "Join Integrity - Upstream Models",
+      "type": "Data Quality",
+      "description": "Verify that relationships with upstream account_monthly_arr_deltas model are valid",
+      "test_query": "SELECT \n    a.account_sfid,\n    a.month_start,\n    COUNT(*) as record_count\nFROM finance.account_monthly_arr_deltas_by_type a\nLEFT JOIN finance.account_monthly_arr_deltas b\n    ON a.account_sfid = b.account_sfid\n    AND a.month_start = b.month_start\nWHERE b.account_sfid IS NULL\n-- Should return 0 rows (all records should have upstream match)",
+      "expected_result": "0 rows (all records have valid upstream relationships)",
+      "severity": "High",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 28
+    }
+  ],
+  "suggested_test_cases": [
+    {
+      "id": "test_suggested_1",
+      "name": "Grace Period Validation",
+      "type": "Business Logic",
+      "description": "Verify that accounts with ARR recovery within 30 days are correctly classified as 'Churn with Recovery ARR' and excluded from total_arr_churn",
+      "test_query": "WITH recovery_check AS (\n    SELECT\n        a.month_start,\n        a.account_sfid,\n        a.total_arr_churn,\n        a.total_arr_churn_with_recovery,\n        a.arr_type,\n        b.month_start as recovery_month_start,\n        b.total_arr_delta as recovery_arr_delta,\n        DATEDIFF(day, a.month_end, b.month_start) as days_to_recovery\n    FROM finance.account_monthly_arr_deltas_by_type a\n    LEFT JOIN finance.account_monthly_arr_deltas b\n        ON a.account_sfid = b.account_sfid\n        AND b.month_start > a.month_start\n        AND b.month_start <= DATEADD(day, 30, a.month_end)\n        AND b.total_arr_delta > 0\n    WHERE a.arr_type = 'Churn ARR'\n      AND b.account_sfid IS NOT NULL\n)\nSELECT * FROM recovery_check\n-- Should return 0 rows (accounts with recovery should be 'Churn with Recovery ARR')",
+      "expected_result": "0 rows (no 'Churn ARR' should have recovery within 30 days)",
+      "severity": "High",
+      "rationale": "Critical business rule: accounts with recovery within 30 days should not be counted as true churn",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 19
+    },
+    {
+      "id": "test_suggested_2",
+      "name": "Recovery Classification Validation",
+      "type": "Business Logic",
+      "description": "Verify that accounts classified as 'Churn with Recovery ARR' have corresponding recovery within 30 days",
+      "test_query": "WITH recovery_validation AS (\n    SELECT\n        a.month_start,\n        a.account_sfid,\n        a.arr_type,\n        a.total_arr_churn_with_recovery,\n        b.month_start as recovery_month_start,\n        b.total_arr_delta as recovery_arr_delta,\n        DATEDIFF(day, a.month_end, b.month_start) as days_to_recovery\n    FROM finance.account_monthly_arr_deltas_by_type a\n    LEFT JOIN finance.account_monthly_arr_deltas b\n        ON a.account_sfid = b.account_sfid\n        AND b.month_start > a.month_start\n        AND b.month_start <= DATEADD(day, 30, a.month_end)\n        AND b.total_arr_delta > 0\n    WHERE a.arr_type = 'Churn with Recovery ARR'\n)\nSELECT * FROM recovery_validation\nWHERE recovery_month_start IS NULL\n-- Should return 0 rows (all recovery accounts should have matching recovery)",
+      "expected_result": "0 rows (all 'Churn with Recovery ARR' should have recovery within 30 days)",
+      "severity": "High",
+      "rationale": "Ensures recovery classification is accurate and based on actual recovery events",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 19
+    },
+    {
+      "id": "test_suggested_3",
+      "name": "Distribution Validation - Downstream Reports",
+      "type": "Integration",
+      "description": "Verify that churn distribution in downstream report matches new formula (churn values should decrease)",
+      "test_query": "WITH old_churn AS (\n    SELECT\n        month_start,\n        SUM(total_arr_churn) as old_total_churn\n    FROM backup_account_monthly_arr_deltas_by_type\n    WHERE month_start >= DATEADD(month, -3, CURRENT_DATE)\n    GROUP BY month_start\n),\nnew_churn AS (\n    SELECT\n        month_start,\n        SUM(total_arr_churn) as new_total_churn,\n        SUM(total_arr_churn_with_recovery) as recovery_churn\n    FROM finance.account_monthly_arr_deltas_by_type\n    WHERE month_start >= DATEADD(month, -3, CURRENT_DATE)\n    GROUP BY month_start\n)\nSELECT\n    o.month_start,\n    o.old_total_churn,\n    n.new_total_churn,\n    n.recovery_churn,\n    (n.new_total_churn - o.old_total_churn) as churn_difference,\n    CASE WHEN n.new_total_churn > o.old_total_churn THEN 'ERROR: Churn increased' ELSE 'OK' END as validation\nFROM old_churn o\nJOIN new_churn n ON o.month_start = n.month_start\nWHERE n.new_total_churn > o.old_total_churn\n-- Should return 0 rows (new churn should be <= old churn)",
+      "expected_result": "0 rows (new churn values should be <= old churn values)",
+      "severity": "Medium",
+      "rationale": "Validates that grace period implementation correctly reduces churn counts",
+      "file_path": "transform/snowflake-dbt/models/finance/rpt_monthly_churn_summary.sql",
+      "line_number": 1
+    },
+    {
+      "id": "test_suggested_4",
+      "name": "New Column Validation - total_arr_churn_with_recovery",
+      "type": "Data Quality",
+      "description": "Verify that total_arr_churn_with_recovery is properly calculated and non-null for recovery accounts",
+      "test_query": "SELECT\n    month_start,\n    account_sfid,\n    arr_type,\n    total_arr_churn,\n    total_arr_churn_with_recovery,\n    CASE\n        WHEN arr_type = 'Churn with Recovery ARR' AND total_arr_churn_with_recovery = 0 THEN 'ERROR: Recovery should have value'\n        WHEN arr_type = 'Churn ARR' AND total_arr_churn_with_recovery != 0 THEN 'ERROR: True churn should not have recovery'\n        WHEN arr_type NOT IN ('Churn ARR', 'Churn with Recovery ARR') AND total_arr_churn_with_recovery != 0 THEN 'ERROR: Non-churn should not have recovery'\n        ELSE 'OK'\n    END as validation\nFROM finance.account_monthly_arr_deltas_by_type\nWHERE validation != 'OK'\n-- Should return 0 rows",
+      "expected_result": "0 rows (recovery column should match arr_type classification)",
+      "severity": "High",
+      "rationale": "Ensures new column is correctly populated based on business logic",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "line_number": 27
+    }
+  ],
+  "summary": {
+    "total_existing_tests": 8,
+    "total_suggested_tests": 4,
+    "high_severity": 7,
+    "medium_severity": 5,
+    "test_coverage": "Business Logic, Data Quality, Integration, Edge Cases"
+  }
+}
+

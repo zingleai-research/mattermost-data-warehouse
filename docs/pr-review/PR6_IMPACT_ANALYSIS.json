@@ -1,0 +1,235 @@
+{
+  "pr_id": "PR6",
+  "pr_title": "Update Churn Formula with 30-Day Grace Period",
+  "affected_assets": {
+    "directly_affected": 1,
+    "downstream_affected": 2,
+    "total_affected": 3
+  },
+  "lineage": [
+    {
+      "model_id": "model_1",
+      "model_name": "account_monthly_arr_deltas_by_type",
+      "model_type": "fact",
+      "schema": "finance",
+      "file_path": "transform/snowflake-dbt/models/finance/account_monthly_arr_deltas_by_type.sql",
+      "impact_type": "direct",
+      "change_description": "Churn formula updated with 30-day grace period. New column total_arr_churn_with_recovery added. arr_type CASE statement updated to include 'Churn with Recovery ARR' category.",
+      "risk_level": "High",
+      "breaking_changes": [
+        "total_arr_churn values will decrease (accounts with recovery excluded)",
+        "New column total_arr_churn_with_recovery added",
+        "arr_type values change (new category 'Churn with Recovery ARR' added)"
+      ],
+      "data_impact": {
+        "row_count_change": "No change (same number of rows)",
+        "column_count_change": "+1 column (total_arr_churn_with_recovery)",
+        "value_distribution_change": "Yes - total_arr_churn values decrease, new recovery column populated"
+      },
+      "dependencies": {
+        "upstream": [
+          {
+            "model": "account_monthly_arr_deltas",
+            "relationship": "direct reference"
+          }
+        ],
+        "downstream": [
+          {
+            "model": "rpt_monthly_churn_summary",
+            "relationship": "distribution change"
+          },
+          {
+            "model": "fct_churn_analysis",
+            "relationship": "new column reference"
+          }
+        ]
+      }
+    },
+    {
+      "model_id": "model_2",
+      "model_name": "rpt_monthly_churn_summary",
+      "model_type": "report",
+      "schema": "reports_finance",
+      "file_path": "transform/snowflake-dbt/models/finance/rpt_monthly_churn_summary.sql",
+      "impact_type": "downstream",
+      "impact_category": "distribution_change",
+      "change_description": "Churn distribution will change due to updated total_arr_churn values. Churn rates will decrease as accounts with recovery are excluded from true churn calculation.",
+      "risk_level": "Medium",
+      "breaking_changes": [
+        "Churn rate calculations will show different values (lower rates)",
+        "Distribution of churn by segment will shift",
+        "Historical churn metrics may change for recent months"
+      ],
+      "data_impact": {
+        "row_count_change": "No change",
+        "column_count_change": "No change",
+        "value_distribution_change": "Yes - churn values decrease, churn rates recalculate lower",
+        "metric_impact": [
+          "Monthly churn rate: Will decrease (accounts with recovery excluded)",
+          "Churn by customer tier: Distribution changes",
+          "Churn by geography: Values decrease proportionally"
+        ]
+      },
+      "dependencies": {
+        "upstream": [
+          {
+            "model": "account_monthly_arr_deltas_by_type",
+            "relationship": "direct reference",
+            "columns_used": [
+              "total_arr_churn",
+              "arr_type",
+              "month_start",
+              "account_sfid"
+            ]
+          }
+        ],
+        "downstream": [
+          {
+            "model": "Executive Dashboard - Finance",
+            "relationship": "data source",
+            "impact": "Dashboard metrics will show updated churn rates"
+          },
+          {
+            "model": "Monthly Finance Report",
+            "relationship": "data source",
+            "impact": "Report churn metrics will change"
+          }
+        ]
+      },
+      "compilation_errors": [],
+      "runtime_errors": [],
+      "warnings": [
+        "Churn rate metrics will change - notify stakeholders",
+        "Historical comparisons may show discrepancies"
+      ]
+    },
+    {
+      "model_id": "model_3",
+      "model_name": "fct_churn_analysis",
+      "model_type": "fact",
+      "schema": "finance",
+      "file_path": "transform/snowflake-dbt/models/finance/fct_churn_analysis.sql",
+      "impact_type": "downstream",
+      "impact_category": "new_column_handling",
+      "change_description": "Model references new column total_arr_churn_with_recovery which does not exist in base branch. Will cause compilation error until PR is merged.",
+      "risk_level": "High",
+      "breaking_changes": [
+        "Compilation error: Column 'total_arr_churn_with_recovery' does not exist",
+        "Model cannot be built until upstream model is updated",
+        "Downstream dashboards using this model will fail"
+      ],
+      "data_impact": {
+        "row_count_change": "N/A (model fails to compile)",
+        "column_count_change": "N/A (model fails to compile)",
+        "value_distribution_change": "N/A (model fails to compile)"
+      },
+      "dependencies": {
+        "upstream": [
+          {
+            "model": "account_monthly_arr_deltas_by_type",
+            "relationship": "direct reference",
+            "columns_used": [
+              "total_arr_churn",
+              "total_arr_churn_with_recovery",
+              "arr_type",
+              "month_start",
+              "account_sfid"
+            ],
+            "missing_columns": [
+              "total_arr_churn_with_recovery"
+            ]
+          }
+        ],
+        "downstream": [
+          {
+            "model": "Churn Analysis Dashboard",
+            "relationship": "data source",
+            "impact": "Dashboard will fail to load until model is fixed"
+          }
+        ]
+      },
+      "compilation_errors": [
+        {
+          "error_type": "ColumnNotFoundError",
+          "error_message": "Column 'total_arr_churn_with_recovery' does not exist in model 'account_monthly_arr_deltas_by_type'",
+          "severity": "Critical",
+          "file_path": "transform/snowflake-dbt/models/finance/fct_churn_analysis.sql",
+          "line_number": 15,
+          "resolution": "Merge PR to add column to upstream model"
+        }
+      ],
+      "runtime_errors": [],
+      "warnings": [
+        "Model must be updated to handle new column after PR merge",
+        "Consider adding fallback logic for missing column during transition"
+      ]
+    }
+  ],
+  "impact_summary": {
+    "pipelines_affected": [
+      {
+        "pipeline_name": "Finance Nightly Refresh",
+        "status": "Will fail",
+        "affected_models": [
+          "fct_churn_analysis"
+        ],
+        "reason": "Compilation error in fct_churn_analysis"
+      }
+    ],
+    "dashboards_affected": [
+      {
+        "dashboard_name": "Executive Finance Dashboard",
+        "status": "Metrics will change",
+        "affected_metrics": [
+          "Monthly Churn Rate",
+          "Churn by Customer Segment",
+          "Churn Trend Analysis"
+        ],
+        "impact": "Churn rates will show lower values"
+      },
+      {
+        "dashboard_name": "Churn Analysis Dashboard",
+        "status": "Will fail",
+        "affected_metrics": [
+          "Churn with Recovery Analysis",
+          "Recovery Rate Metrics"
+        ],
+        "impact": "Dashboard cannot load due to missing column"
+      }
+    ],
+    "reports_affected": [
+      {
+        "report_name": "Monthly Finance Report",
+        "status": "Metrics will change",
+        "affected_sections": [
+          "Churn Summary",
+          "Customer Retention Analysis"
+        ],
+        "impact": "Churn values and rates will decrease"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "priority": "Critical",
+      "action": "Merge PR to resolve compilation errors in fct_churn_analysis",
+      "reason": "Downstream model cannot compile without new column"
+    },
+    {
+      "priority": "High",
+      "action": "Notify stakeholders of churn metric changes",
+      "reason": "Churn rates will decrease - important for finance reporting"
+    },
+    {
+      "priority": "Medium",
+      "action": "Update dashboard documentation to reflect new churn calculation",
+      "reason": "Users need to understand why metrics changed"
+    },
+    {
+      "priority": "Low",
+      "action": "Consider adding historical comparison view",
+      "reason": "Help users understand impact of formula change"
+    }
+  ]
+}
+
