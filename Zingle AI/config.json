@@ -1,0 +1,120 @@
+{
+    "version": "1.0",
+    "project": {
+      "id": "zingle-ai-pr-reviewer",
+      "name": "Zingle AI PR Reviewer",
+      "description": "AI-driven data review and tagging assistant for enforcing governance, compliance, and consistency across data marts."
+    },
+    "config": {
+      "repositories": [
+        {
+          "name": "analytics-dwh",
+          "path": "src/sql",
+          "branch": "main",
+          "include_file_types": [".sql", ".yml", ".yaml"]
+        }
+      ],
+      "review_triggers": {
+        "on_commit": true,
+        "on_pull_request": true,
+        "manual_review": false
+      },
+      "severity_levels": ["low", "medium", "high", "critical"]
+    },
+    "agents": [
+      {
+        "id": "pii_tagging_agent",
+        "name": "PII Tagging Agent",
+        "enabled": true,
+        "description": "Detects personally identifiable information (PII) such as emails, phone numbers, and government IDs in data models.",
+        "settings": {
+          "confidence_threshold": 0.8,
+          "mask_suggestions": true,
+          "notify_on_violation": true
+        }
+      },
+      {
+        "id": "domain_tagging_agent",
+        "name": "Domain Tagging Agent",
+        "enabled": true,
+        "description": "Automatically classifies datasets into business domains like Finance, HR, or Operations based on metadata and table context.",
+        "settings": {
+          "domain_mapping_file": "configs/domain_map.yaml"
+        }
+      },
+      {
+        "id": "schema_validation_agent",
+        "name": "Schema Validation Agent",
+        "enabled": true,
+        "description": "Checks schema conformance with company-wide standards — naming conventions, required fields, and data types.",
+        "settings": {
+          "strict_mode": false,
+          "max_missing_docs": 5
+        }
+      },
+      {
+        "id": "data_lineage_agent",
+        "name": "Data Lineage Agent",
+        "enabled": false,
+        "description": "Builds end-to-end lineage graphs to trace data flow from raw to aggregated layers.",
+        "settings": {
+          "graph_depth": 3,
+          "store_lineage_in": "lineage_db"
+        }
+      },
+      {
+        "id": "policy_compliance_agent",
+        "name": "Policy Compliance Agent",
+        "enabled": true,
+        "description": "Validates access and ownership rules against the rulebook (e.g., Operations team cannot access Finance tables).",
+        "settings": {
+          "rulebook_path": "configs/access_rules.json"
+        }
+      },
+      {
+        "id": "metric_standardization_agent",
+        "name": "Metric Standardization Agent",
+        "enabled": true,
+        "description": "Ensures consistent definitions for metrics like ARR, churn, and CAC across marts.",
+        "settings": {
+          "reference_definitions": "configs/metrics_reference.yaml"
+        }
+      },
+      {
+        "id": "anomaly_detection_agent",
+        "name": "Anomaly Detection Agent",
+        "enabled": false,
+        "description": "Detects irregular schema or data behavior (e.g., sudden column addition/removal).",
+        "settings": {
+          "alert_threshold": 0.9,
+          "historical_window_days": 7
+        }
+      },
+      {
+        "id": "data_quality_scoring_agent",
+        "name": "Data Quality Scoring Agent",
+        "enabled": true,
+        "description": "Evaluates datasets on completeness, conformity, and duplication to generate a quality score.",
+        "settings": {
+          "scoring_weights": {
+            "completeness": 0.4,
+            "consistency": 0.3,
+            "freshness": 0.3
+          }
+        }
+      }
+    ],
+    "output": {
+      "format": "json",
+      "store_results_in": "reports/data_intelli_output.json",
+      "fields": ["agent_id", "file_path", "finding", "severity", "recommendation"],
+      "sample_finding": {
+        "agent_id": "pii_tagging_agent",
+        "file_path": "src/sql/customer_data.sql",
+        "finding": "Column `customer_email` contains unmasked PII.",
+        "severity": "high",
+        "recommendation": "Mask or restrict access to this field as per data policy."
+      }
+    }
+  }
+  

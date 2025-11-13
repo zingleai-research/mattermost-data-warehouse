@@ -26,8 +26,84 @@ models:
           - not_null
   - name: account_monthly_arr_deltas_by_type
     description: Monthly Account ARR Deltas by ARR type
+    tags:
+      - operations_team
+    tests:
+      # Unique Key Validation - Verifies unique combination of account_sfid and month_start
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - account_sfid
+            - month_start
+          config:
+            severity: error
+      # Grace Period Window Validation - Ensures data is fresh enough to accurately classify accounts within the 30-day grace period
+      - dbt_utils.expression_is_true:
+          expression: "month_end <= CURRENT_DATE()"
+          config:
+            severity: warn
+            description: "Validates that recent churn events have sufficient future data available"
+      # Sum Validation - Verifies ARR type columns sum equals total_arr_delta
+      - dbt_utils.expression_is_true:
+          expression: "ABS(total_arr_delta - (COALESCE(total_arr_new, 0) + COALESCE(total_arr_expansion, 0) + COALESCE(total_arr_resurrection, 0) + COALESCE(total_arr_contraction, 0) + COALESCE(total_arr_churn, 0) + COALESCE(total_arr_churn_with_recovery, 0))) < 0.01"
+          config:
+            severity: error
+            description: "Verifies ARR type columns sum equals total_arr_delta"
     columns:
       - name: account_sfid
+        description: Salesforce Account ID
+        tests:
+          - not_null
+          # Join Integrity - Verifies relationships with upstream account_monthly_arr_deltas model are valid
+          - relationships:
+              to: ref('account_monthly_arr_deltas')
+              field: account_sfid
+              config:
+                severity: error
+      - name: master_account_sfid
+        description: Master Account Salesforce ID
+        tests:
+          - not_null
+      - name: month_start
+        description: Start of the month for ARR delta calculation
+        tests:
+          - not_null
+      - name: month_end
+        description: End of the month for ARR delta calculation
+        tests:
+          - not_null
+      - name: arr_type
+        description: Type of ARR delta (New, Expansion, Resurrection, Contraction, Churn, Churn with Recovery)
+        tests:
+          # ARR Type Classification Validation - Verifies that arr_type is correctly populated and matches business logic rules
+          - accepted_values:
+              values: ['New ARR', 'Expansion ARR', 'Resurrection ARR', 'Contraction ARR', 'Churn ARR', 'Churn with Recovery ARR']
+              quote: false
+              where: "arr_type IS NOT NULL"
+              config:
+                severity: error
+                description: "Ensures all rows have valid arr_type values including the new 'Churn with Recovery ARR' category"
+      - name: total_arr_churn
+        description: Total churn ARR delta
+        tests:
+          - not_null
+          # Churn Value Range - Verifies total_arr_churn values are always <= 0
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_churn <= 0"
+              config:
+                severity: error
+                description: "Churn represents ARR loss"
+      - name: total_arr_churn_with_recovery
+        description: Total churn with recovery ARR delta
+        tests:
+          - not_null
+          # Churn Value Range - Verifies total_arr_churn_with_recovery values are always <= 0
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_churn_with_recovery <= 0"
+              config:
+                severity: error
+                description: "Churn represents ARR loss"
+      - name: total_arr_delta
+        description: Total ARR delta (sum of all components)
         tests:
           - not_null
   - name: arr_transactions

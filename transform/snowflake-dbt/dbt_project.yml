@@ -57,7 +57,7 @@ models:
         tags: ["events", "nightly"]
 
     finance:
-      tags: "finance"
+      tags: ["finance", "operations_team"]
 
     ga:
       tags: "ga"
