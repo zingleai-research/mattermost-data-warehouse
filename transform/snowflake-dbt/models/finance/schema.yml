@@ -26,10 +26,118 @@ models:
           - not_null
   - name: account_monthly_arr_deltas_by_type
     description: Monthly Account ARR Deltas by ARR type
+    tags:
+      - operations_team
+    tests:
+      # Cardinality Validation - Ensure unique combination of key fields
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - account_sfid
+            - month_start
+            - arr_type
+          config:
+            severity: error
+      # Data Freshness Validation - Ensure month_end is within reasonable range
+      - dbt_utils.expression_is_true:
+          expression: "month_end <= CURRENT_DATE()"
+          config:
+            severity: warn
+      # Date Filter Validation - Ensure month_start <= month_end
+      - dbt_utils.expression_is_true:
+          expression: "month_start <= month_end"
+          config:
+            severity: error
     columns:
       - name: account_sfid
+        description: Salesforce Account ID
         tests:
           - not_null
+          # Relationship test to parent table
+          - relationships:
+              to: ref('account_monthly_arr_deltas')
+              field: account_sfid
+              config:
+                severity: warn
+      - name: master_account_sfid
+        description: Master Account Salesforce ID
+        tests:
+          - not_null
+      - name: month_start
+        description: Start of the month for ARR delta calculation
+        tests:
+          - not_null
+          # Date Filter Validation - Ensure month_start is a valid date
+          - dbt_utils.expression_is_true:
+              expression: "month_start IS NOT NULL AND month_start <= CURRENT_DATE()"
+      - name: month_end
+        description: End of the month for ARR delta calculation
+        tests:
+          - not_null
+          # Date Filter Validation - Ensure month_end is a valid date
+          - dbt_utils.expression_is_true:
+              expression: "month_end IS NOT NULL AND month_end <= CURRENT_DATE()"
+      - name: arr_type
+        description: Type of ARR delta (New, Expansion, Resurrection, Contraction, Churn, Churn with Recovery)
+        tests:
+          # Accepted values validation
+          - accepted_values:
+              values: ['New ARR', 'Expansion ARR', 'Resurrection ARR', 'Contraction ARR', 'Churn ARR', 'Churn with Recovery ARR']
+              quote: false
+              where: "arr_type IS NOT NULL"
+              config:
+                severity: warn
+      - name: total_arr_new
+        description: Total new ARR delta
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_new >= 0 OR arr_type = 'New ARR'"
+              config:
+                severity: warn
+      - name: total_arr_expansion
+        description: Total expansion ARR delta
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_expansion >= 0 OR arr_type = 'Expansion ARR'"
+              config:
+                severity: warn
+      - name: total_arr_resurrection
+        description: Total resurrection ARR delta
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_resurrection >= 0 OR arr_type = 'Resurrection ARR'"
+              config:
+                severity: warn
+      - name: total_arr_contraction
+        description: Total contraction ARR delta
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_contraction <= 0 OR arr_type = 'Contraction ARR'"
+              config:
+                severity: warn
+      - name: total_arr_churn
+        description: Total churn ARR delta
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_churn <= 0 OR arr_type = 'Churn ARR'"
+              config:
+                severity: warn
+      - name: total_arr_churn_with_recovery
+        description: Total churn with recovery ARR delta
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "total_arr_churn_with_recovery <= 0 OR arr_type = 'Churn with Recovery ARR'"
+              config:
+                severity: warn
+      - name: total_arr_delta
+        description: Total ARR delta (sum of all components)
+        tests:
+          - not_null
+          # Expression test to validate that total_arr_delta equals sum of components
+          - dbt_utils.expression_is_true:
+              expression: "ABS(total_arr_delta - (COALESCE(total_arr_new, 0) + COALESCE(total_arr_expansion, 0) + COALESCE(total_arr_resurrection, 0) + COALESCE(total_arr_contraction, 0) + COALESCE(total_arr_churn, 0) + COALESCE(total_arr_churn_with_recovery, 0))) < 0.01"
+              config:
+                severity: error
+                description: "Total ARR delta should equal the sum of all component ARR deltas"
   - name: arr_transactions
     description: Monthly account activity at account id level
     columns:
