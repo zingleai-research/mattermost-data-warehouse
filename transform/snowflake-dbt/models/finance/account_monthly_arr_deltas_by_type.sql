@@ -17,7 +17,13 @@ WITH monthly_data_with_recovery_check AS (
             ORDER BY month_start
         ) as next_month_start,
         -- Recovery within 30 days calculation - done in this model
-        -- Note: This logic could be moved upstream to account_monthly_arr_deltas for better reuse
+        -- NOTE: This logic should be moved upstream to account_monthly_arr_deltas for better reuse
+        -- Downstream models like rpt_monthly_churn_summary, fct_churn_analysis, and retention reports
+        -- would need to repeat this same LEAD window function calculation, causing:
+        -- 1. Duplicate computation (window functions calculated multiple times)
+        -- 2. Maintenance burden (logic changes need updates in multiple places)
+        -- 3. Risk of inconsistency (different implementations across models)
+        -- See example_downstream_models.md for concrete examples
         CASE
             WHEN total_arr_delta < 0 
                 AND month_ending_arr = 0 
