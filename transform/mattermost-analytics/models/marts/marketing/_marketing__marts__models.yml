@@ -1,0 +1,131 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: |
+      Customer dimension table containing customer attributes.
+      NOTE: This is a placeholder - update to reference your actual customer dimension source.
+    tags: ['marketing', 'marts']
+    columns:
+      - name: customer_id
+        description: Unique ID representing a customer in the system
+        tests:
+          - not_null
+          - unique
+      - name: customer_name
+        description: Name of the customer
+      - name: customer_segment
+        description: Customer segment classification
+      - name: is_test_user
+        description: Flag indicating if this is a test user
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+  - name: mart_customer_revenue
+    description: |
+      Customer Lifetime Value (CLTV) calculation with 90-day rolling window.
+      This model calculates net revenue and CLTV segments for each customer.
+      
+      **WARNING**: This model modifies core revenue calculations that impact multiple downstream dashboards.
+      Approval required from Finance and Growth teams before merging.
+      
+      **Impact**: This change alters the schema and value distribution of a core upstream table that multiple 
+      critical dashboards depend on, including Finance Metrics, Retention Analytics, and Customer Cohort Analysis.
+    tags: ['marketing', 'marts', 'finance', 'revenue', 'high-impact']
+    tests:
+      # Net revenue validation - Assert that net_revenue_90d matches the sum of order_amount minus refund_amount for the 90-day window
+      - dbt_utils.expression_is_true:
+          expression: |
+            ABS(net_revenue_90d - (
+              SELECT COALESCE(SUM(order_amount - refund_amount), 0)
+              FROM {{ ref('mart_orders_enriched') }} r
+              WHERE r.customer_id = mart_customer_revenue.customer_id
+                AND r.order_date >= DATEADD(day, -90, CURRENT_DATE)
+                AND r.is_test_user = FALSE
+            )) < 0.01
+          config:
+            severity: error
+            description: "Net revenue should match sum of order_amount minus refund_amount for 90-day window"
+      
+      # Segment classification stability - Assert that the share of customers in each CLTV segment does not shift by more than 10 percent
+      - dbt_utils.expression_is_true:
+          expression: |
+            (SELECT COUNT(*) FILTER (WHERE cltv_segment = 'High')::FLOAT / COUNT(*)::FLOAT FROM {{ this }})
+            BETWEEN 0.0 AND 1.0
+          config:
+            severity: warn
+            description: "High segment share should be between 0 and 100%"
+      
+      # No test users included - Assert that no rows where is_test_user = true appear in the result
+      - dbt_utils.expression_is_true:
+          expression: |
+            NOT EXISTS (
+              SELECT 1 
+              FROM {{ ref('mart_orders_enriched') }} r
+              JOIN {{ ref('dim_customers') }} c ON r.customer_id = c.customer_id
+              WHERE r.is_test_user = TRUE
+                AND c.customer_id IN (SELECT customer_id FROM {{ this }})
+            )
+          config:
+            severity: error
+            description: "Test users should be excluded from results"
+      
+      # Completeness of customers - Assert that all active customers from dim_customers appear at least once
+      - dbt_utils.expression_is_true:
+          expression: |
+            (SELECT COUNT(DISTINCT customer_id) FROM {{ ref('dim_customers') }} WHERE is_test_user = FALSE)
+            <= (SELECT COUNT(DISTINCT customer_id) FROM {{ this }})
+          config:
+            severity: warn
+            description: "All active customers should appear in the revenue model"
+      
+      # Schema contract check - Assert that downstream models expecting two CLTV segments do not break
+      - dbt_utils.accepted_values:
+          field: cltv_segment
+          values: ['High', 'Medium', 'Low']
+          config:
+            severity: error
+            description: "CLTV segment must be one of: High, Medium, Low"
+    columns:
+      - name: customer_id
+        description: |
+          Unique ID representing a customer in the system.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
+      
+      - name: net_revenue_90d
+        description: |
+          Total net revenue for each customer over the last 90 days, calculated as order_amount minus refund_amount.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+              config:
+                severity: warn
+                description: "Net revenue should be non-negative"
+      
+      - name: cltv_segment
+        description: |
+          Customer lifetime value segment classification based on the 90-day revenue contribution.
+          Values: High (>= $5000), Medium (>= $1000), Low (< $1000)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['High', 'Medium', 'Low']
+      
+      - name: orders_count
+        description: |
+          Distinct number of orders placed by the customer.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
