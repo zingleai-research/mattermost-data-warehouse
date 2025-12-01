@@ -90,6 +90,9 @@ models:
       product:
         schema: reports_product
         tags: [ 'nightly', 'product' ]
+      marketing:
+        schema: reports_marketing
+        tags: [ 'nightly', 'marketing' ]
 
     utilities:
       +materialized: table

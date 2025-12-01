@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: mart_orders_enriched
+    description: |
+      Curated mart table for orders with enriched customer data.
+      Replaces raw_orders and raw_customers joins for better performance.
+      Pre-filters to completed/fulfilled orders and excludes test users.
+    tags: ['marketing', 'marts']
+    tests:
+      # No test users should be included
+      - dbt_utils.expression_is_true:
+          expression: "is_test_user = FALSE"
+          config:
+            severity: error
+            description: "Test users should be excluded from the mart"
+      # Revenue should be non-negative
+      - dbt_utils.expression_is_true:
+          expression: "revenue >= 0"
+          config:
+            severity: error
+            description: "Revenue should never be negative"
+    columns:
+      - name: order_id
+        description: Unique identifier for the order
+        tests:
+          - not_null
+          - unique
+      - name: order_date
+        description: Date of the order (used for revenue alignment)
+        tests:
+          - not_null
+      - name: customer_id
+        description: Identifier for the customer
+        tests:
+          - not_null
+      - name: revenue
+        description: Revenue amount for the order
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: customer_segment
+        description: Customer segment classification
+      - name: is_test_user
+        description: Flag indicating if this is a test user
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
