@@ -40,6 +40,15 @@ quoting:
 
 models:
   mm_snowflake:
+    # Compute size configurations - use these tags to control warehouse selection
+    snowflake_large:
+      +snowflake_warehouse: "TRANSFORM_L"
+      tags: ["snowflake_large"]
+    
+    snowflake_small:
+      +snowflake_warehouse: "TRANSFORM_XS"
+      tags: ["snowflake_small"]
+
     bizops:
       nightly:
         +snowflake_warehouse: "TRANSFORM_L"

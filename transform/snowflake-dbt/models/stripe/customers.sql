@@ -1,8 +1,9 @@
 {{config({
-    "materialized": 'incremental',
+    "materialized": "incremental",
     "schema": "stripe",
-    "unique_key":"id",
-    "tags":"hourly"
+    "unique_key": "id",
+    "tags": ["hourly", "snowflake_large"],
+    "snowflake_warehouse": "TRANSFORM_L"
   })
 }}
 

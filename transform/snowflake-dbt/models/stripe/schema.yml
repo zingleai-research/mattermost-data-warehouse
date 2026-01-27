@@ -2,9 +2,30 @@ version: 2
 
 models:
   - name: subscriptions
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
   - name: customers
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
   - name: subscription_items
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
   - name: products
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
   - name: invoices
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
   - name: invoice_line_items
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
   - name: charges
+    config:
+      tags: ["snowflake_small"]
+      +snowflake_warehouse: "TRANSFORM_XS"
