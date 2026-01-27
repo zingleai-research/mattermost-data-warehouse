@@ -2,7 +2,7 @@
     "materialized": "incremental",
     "schema": "stripe",
     "unique_key": "id",
-    "tags": ["hourly", "snowflake_large"],
+    "tags": ["hourly", "managed_duckdb"],
   })
 }}
 
