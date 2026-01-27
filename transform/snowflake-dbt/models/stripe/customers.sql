@@ -3,7 +3,6 @@
     "schema": "stripe",
     "unique_key": "id",
     "tags": ["hourly", "snowflake_large"],
-    "snowflake_warehouse": "TRANSFORM_L"
   })
 }}
 
