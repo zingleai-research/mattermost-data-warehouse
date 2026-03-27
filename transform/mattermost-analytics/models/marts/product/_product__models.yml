@@ -769,3 +769,36 @@ models:
         description: |
           Whether the licensed seats reported via telemetry is matching the number of licensed seats from license 
           information.
+
+  - name: fct_user_engagement_report
+    description: |
+      Daily user engagement report aggregating all user activity events for dashboard reporting.
+      Provides comprehensive engagement metrics including user activity ranks, event categories,
+      and server-level engagement scores.
+    columns:
+      - name: server_id
+        description: The server's unique id.
+        tests:
+          - not_null
+      - name: total_active_users
+        description: Total number of active users on the server.
+      - name: total_server_events
+        description: Total number of events across all users on the server.
+      - name: server_event_types
+        description: Total number of unique event types on the server.
+      - name: avg_user_activity_span
+        description: Average activity span in hours across users.
+      - name: engagement_score
+        description: Weighted engagement score calculated from events and activity span.
+      - name: top_user_id
+        description: User ID with the highest engagement rank.
+      - name: top_user_events
+        description: Total events for the top engaged user.
+      - name: user_activity_rank
+        description: Activity rank of the top user (1 = most active).
+      - name: top_event_category
+        description: Most popular event category on the server.
+      - name: top_category_events
+        description: Event count for the top category.
+      - name: category_rank
+        description: Rank of the top event category (1 = most popular).
