@@ -1,0 +1,78 @@
+version: 2
+
+models:
+  - name: rpt_30day_revenue_by_segment
+    description: |
+      Optimized 30-day revenue by customer segment query for Growth dashboard.
+      Uses curated mart_orders_enriched instead of raw tables for better performance.
+      Filters to last 30 days of data using order_date to align with realised revenue.
+      Excludes test users from results.
+    tags: ['growth_dashboard', 'marketing', 'reports']
+    tests:
+      # Non-negative revenue validation
+      - dbt_utils.expression_is_true:
+          expression: "total_revenue >= 0"
+          config:
+            severity: error
+            description: "Revenue should never be negative"
+      # No test users included
+      - dbt_utils.expression_is_true:
+          expression: |
+            NOT EXISTS (
+              SELECT 1 
+              FROM {{ ref('mart_orders_enriched') }} 
+              WHERE order_date >= DATEADD(day, -30, CURRENT_DATE())
+                AND is_test_user = TRUE
+            )
+          config:
+            severity: error
+            description: "Test users should be excluded from results"
+      # At least one row per active segment
+      - dbt_utils.expression_is_true:
+          expression: "COUNT(*) > 0"
+          config:
+            severity: warn
+            description: "Should have at least one active segment"
+      # Data freshness - should have data from last 24 hours
+      - dbt_utils.expression_is_true:
+          expression: "MAX(last_order_date) >= DATEADD(day, -1, CURRENT_DATE())"
+          config:
+            severity: warn
+            description: "Data should be fresh within last 24 hours"
+    columns:
+      - name: customer_segment
+        description: The customer segment classification
+        tests:
+          - not_null
+      - name: active_customers
+        description: Number of distinct customers in the segment
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: total_orders
+        description: Total number of orders in the last 30 days
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: total_revenue
+        description: Total revenue in the last 30 days for this segment
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: avg_order_value
+        description: Average order value for the segment
+      - name: first_order_date
+        description: First order date in the 30-day window
+      - name: last_order_date
+        description: Last order date in the 30-day window
+      - name: report_generated_at
+        description: Timestamp when the report was generated
+        tests:
+          - not_null
+
